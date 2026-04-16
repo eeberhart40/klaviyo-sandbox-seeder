@@ -15,7 +15,7 @@ A local web app for seeding a Klaviyo sandbox or trial account with realistic sy
 - Uses Claude (claude-sonnet-4-6) to write campaign copy: subject, headline, body, CTA, and an AI image prompt
 - Generates hero images via Pollinations.ai — contextually relevant to the campaign, no API key needed
 - **Email Campaign**: creates a named HTML template in Klaviyo Content → Templates, then creates a draft campaign with the template assigned
-- **Multi-step Flow**: creates a 3-email flow with a conditional split (phone number is-set), yes branch (SMS or email), and no branch follow-up — using the Klaviyo beta Flows API
+- **Multi-step Flow** *(optional)*: creates a 3-email flow using the Klaviyo beta Flows API. Optionally includes a conditional split (phone number is-set) with a yes branch (optionally SMS) and an email no branch
 
 ---
 
