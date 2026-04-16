@@ -1,23 +1,33 @@
 # klaviyo-sandbox-seeder
 
-MCP server that seeds a Klaviyo sandbox/trial account with realistic synthetic DTC apparel data. Built for partner demo enablement — any partner, any account, one command.
+A local web app for seeding a Klaviyo sandbox or trial account with realistic synthetic DTC data, and generating AI-written email campaigns and multi-step flows.
 
-## What it creates
+## What it does
 
-- **Profiles** with realistic names, emails, RFM segments, purchase history properties
-- **9 lists**: VIP Champions, Loyal Customers, At-Risk, Lapsed 90+ Days, New Customers, and more  
-- **Events**: Placed Order, Fulfilled Order, Viewed Product, Started Checkout — spread across 12 months
-- Profiles tagged `_seeder: true` for clean resets
+**Seed tab**
+- Creates 9 standard lists (VIP Champions, Loyal Customers, At-Risk, Lapsed 90+ Days, New Customers, and more) plus a hidden `__Seeder` tracking list used for clean resets
+- Generates and upserts profiles with realistic names, emails, US locations, and RFM segment properties
+- Tracks events per profile: Placed Order, Fulfilled Order, Viewed Product, Started Checkout
+- Supports 3 industry scenarios (Apparel, Beauty, Home & Electronics) with different RFM distributions
+- Reset deletes all seeded profiles and lists cleanly
 
-RFM distribution (standard scenario):
+**Generate tab**
+- Uses Claude (claude-sonnet-4-6) to write campaign copy: subject, headline, body, CTA, and an AI image prompt
+- Generates hero images via Pollinations.ai — contextually relevant to the campaign, no API key needed
+- **Email Campaign**: creates a named HTML template in Klaviyo Content → Templates, then creates a draft campaign with the template assigned
+- **Multi-step Flow**: creates a 3-email flow with a conditional split (phone number is-set), yes branch (SMS or email), and no branch follow-up — using the Klaviyo beta Flows API
 
-| Segment   | % | Recency      | Orders |
-|-----------|---|--------------|--------|
-| Champions |10%| 1–30 days    | 5–15   |
-| Loyal     |20%| 15–60 days   | 3–8    |
-| At-Risk   |20%| 61–120 days  | 2–5    |
-| Lapsed    |25%| 121–365 days | 1–3    |
-| New       |25%| 1–45 days    | 1–2    |
+---
+
+## RFM distribution (standard scenario)
+
+| Segment   | %  | Recency      | Orders |
+|-----------|----|--------------|--------|
+| Champions | 10%| 1–30 days    | 5–15   |
+| Loyal     | 20%| 15–60 days   | 3–8    |
+| At-Risk   | 20%| 61–120 days  | 2–5    |
+| Lapsed    | 25%| 121–365 days | 1–3    |
+| New       | 25%| 1–45 days    | 1–2    |
 
 ---
 
@@ -25,56 +35,36 @@ RFM distribution (standard scenario):
 
 ```bash
 npm install
-export KLAVIYO_API_KEY=pk_xxxxxxxxxxxx
+cp .env.example .env
 ```
 
-Get your key: Klaviyo → Settings → API Keys → Create Private Key  
-Scopes needed: profiles:read/write, lists:read/write, events:write
+Edit `.env` and add your keys:
 
-### Register with Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "klaviyo-seeder": {
-      "command": "node",
-      "args": ["/absolute/path/to/klaviyo-sandbox-seeder/src/index.js"],
-      "env": { "KLAVIYO_API_KEY": "pk_xxxxxxxxxxxx" }
-    }
-  }
-}
+```
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Restart Claude Desktop.
+Your Klaviyo API key is entered in the UI — no need to add it to `.env`.
+
+Get your Klaviyo key: Settings → API Keys → Create Private Key  
+Scopes needed: `profiles:read/write`, `lists:read/write`, `events:write`, `templates:read/write`, `campaigns:read/write`, `flows:read/write`
 
 ---
 
-## Usage
+## Running locally
 
-Tell Claude in plain English:
+```bash
+npm run dev
+```
 
-- "Seed this Klaviyo account with 250 profiles, standard scenario"
-- "Add 50 lapsed customers to the sandbox"  
-- "Track 6 months of purchase events for all profiles"
-- "Reset the sandbox so I can demo again"
-
----
-
-## MCP Tools
-
-| Tool | What it does |
-|------|-------------|
-| `seed_sandbox` | Full seed: lists + profiles + events |
-| `seed_profiles` | Profiles only, by segment |
-| `seed_events` | Events only for existing profiles |
-| `create_lists` | Create standard segment lists |
-| `reset_sandbox` | Delete all seeded profiles |
-| `describe_sandbox` | Summary of account state |
+Opens the app at [http://localhost:5173](http://localhost:5173). The Express server runs on port 3001 and the Vite dev server proxies API requests to it.
 
 ---
 
-## Extending to other industries
+## Stack
 
-Only `src/generator.js` is brand-specific. To support another vertical, swap out `PRODUCTS`, AOV ranges in `SEGMENT_CONFIG`, and `_eventProps`. The MCP interface and Klaviyo client are fully generic.
+- **Frontend**: React + Vite (no CSS framework, inline styles)
+- **Backend**: Express with SSE streaming for real-time progress logs
+- **Klaviyo**: REST API v3 (`2024-10-15`), beta Flows API (`2024-10-15.pre`)
+- **AI copy**: Anthropic SDK (`claude-sonnet-4-6`)
+- **AI images**: Pollinations.ai (free, no key required)
