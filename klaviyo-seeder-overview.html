@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Klaviyo Sandbox Seeder — MCP Pattern</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Syne+Mono&display=swap');
+
+:root {
+  --bg: #f5f0e8;
+  --ink: #1a1208;
+  --mid: #6b5c3e;
+  --faint: #e0d8c8;
+  --brand: #c84b11;
+  --brand2: #2d6a2d;
+  --brand3: #1a4a8a;
+  --rule: #c8bfa8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Syne', sans-serif;
+  padding: 48px 40px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.eyebrow {
+  font-family: 'Syne Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mid);
+  margin-bottom: 10px;
+}
+
+h1 {
+  font-size: clamp(32px, 6vw, 60px);
+  font-weight: 800;
+  line-height: 1.0;
+  margin-bottom: 6px;
+}
+
+h1 em {
+  font-style: normal;
+  color: var(--brand);
+  display: block;
+}
+
+.tagline {
+  font-size: 14px;
+  color: var(--mid);
+  max-width: 500px;
+  margin-bottom: 48px;
+  line-height: 1.6;
+}
+
+hr { border: none; border-top: 1px solid var(--rule); margin: 36px 0; }
+
+/* ARCHITECTURE FLOW */
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 48px;
+  flex-wrap: wrap;
+}
+
+.flow-node {
+  flex: 1;
+  min-width: 140px;
+  border: 1.5px solid var(--ink);
+  padding: 20px 16px;
+  position: relative;
+  background: #fff;
+}
+
+.flow-node + .flow-node {
+  border-left: none;
+}
+
+.flow-node:first-child { border-radius: 6px 0 0 6px; }
+.flow-node:last-child  { border-radius: 0 6px 6px 0; border-left: 1.5px solid var(--ink); }
+
+.flow-node.accent {
+  background: var(--ink);
+  color: #f5f0e8;
+}
+
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 18px;
+  color: var(--mid);
+  flex-shrink: 0;
+}
+
+.fn-icon { font-size: 24px; margin-bottom: 6px; }
+.fn-name { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+.fn-sub  { font-size: 10px; color: var(--mid); font-family: 'Syne Mono', monospace; line-height: 1.5; }
+.flow-node.accent .fn-sub { color: #c8bfa8; }
+
+/* SEGMENTS GRID */
+.seg-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 48px;
+}
+
+@media (max-width: 640px) { .seg-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.seg-card {
+  border: 1.5px solid var(--ink);
+  padding: 16px 14px;
+  border-radius: 4px;
+  cursor: default;
+  transition: transform 0.15s;
+}
+.seg-card:hover { transform: translateY(-2px); }
+
+.seg-pct {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.seg-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+.seg-pill {
+  display: inline-block;
+  font-family: 'Syne Mono', monospace;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  margin: 2px 0;
+  display: block;
+}
+
+.seg-card.c1 { background: #fff3ee; border-color: var(--brand); }
+.seg-card.c1 .seg-pct { color: var(--brand); }
+.seg-card.c1 .seg-pill { background: var(--brand); color: #fff; }
+
+.seg-card.c2 { background: #eef5ee; border-color: var(--brand2); }
+.seg-card.c2 .seg-pct { color: var(--brand2); }
+.seg-card.c2 .seg-pill { background: var(--brand2); color: #fff; }
+
+.seg-card.c3 { background: #eef2fb; border-color: var(--brand3); }
+.seg-card.c3 .seg-pct { color: var(--brand3); }
+.seg-card.c3 .seg-pill { background: var(--brand3); color: #fff; }
+
+.seg-card.c4 { background: #f5f0e8; border-color: #8a5a1a; }
+.seg-card.c4 .seg-pct { color: #8a5a1a; }
+.seg-card.c4 .seg-pill { background: #8a5a1a; color: #fff; }
+
+.seg-card.c5 { background: #f8f8f8; border-color: #444; }
+.seg-card.c5 .seg-pct { color: #444; }
+.seg-card.c5 .seg-pill { background: #444; color: #fff; }
+
+/* TOOLS TABLE */
+h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.tools-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 48px;
+  font-size: 13px;
+}
+
+.tools-table th {
+  text-align: left;
+  font-family: 'Syne Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mid);
+  padding: 8px 12px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.tools-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.tools-table tr:last-child td { border-bottom: none; }
+
+.tool-name {
+  font-family: 'Syne Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+.tool-example {
+  font-family: 'Syne Mono', monospace;
+  font-size: 10px;
+  color: var(--mid);
+  display: block;
+  margin-top: 3px;
+}
+
+/* EXTEND SECTION */
+.extend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+@media (max-width: 520px) { .extend-grid { grid-template-columns: 1fr; } }
+
+.extend-card {
+  border: 1.5px solid var(--rule);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.extend-card h4 {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.extend-card p {
+  font-size: 12px;
+  color: var(--mid);
+  line-height: 1.6;
+}
+
+.extend-card code {
+  font-family: 'Syne Mono', monospace;
+  font-size: 11px;
+  background: var(--faint);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+/* SETUP STEPS */
+.steps { counter-reset: step; margin-bottom: 48px; }
+
+.step {
+  display: flex;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: flex-start;
+}
+
+.step:last-child { border-bottom: none; }
+
+.step-num {
+  counter-increment: step;
+  width: 32px; height: 32px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 13px;
+  flex-shrink: 0;
+  background: var(--ink); color: var(--bg);
+}
+
+.step-body h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.step-body p  { font-size: 12px; color: var(--mid); line-height: 1.6; }
+.step-body code { font-family: 'Syne Mono', monospace; font-size: 11px; background: var(--faint); padding: 2px 6px; border-radius: 2px; }
+
+/* CALLOUT */
+.callout {
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 6px;
+  padding: 24px 28px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.callout strong { color: var(--brand); }
+.callout code { font-family: 'Syne Mono', monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Partner SE Interview · Klaviyo</p>
+<h1>Klaviyo Sandbox<br><em>Seeder</em></h1>
+<p class="tagline">An MCP server that seeds any Klaviyo trial account with realistic synthetic data for a DTC apparel brand. Any partner, any account — one command.</p>
+
+<hr>
+
+<!-- ARCHITECTURE -->
+<p class="eyebrow">Architecture</p>
+<div class="flow">
+  <div class="flow-node">
+    <div class="fn-icon">🤖</div>
+    <div class="fn-name">Claude Desktop</div>
+    <div class="fn-sub">natural language<br>instruction</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node accent">
+    <div class="fn-icon">⚙️</div>
+    <div class="fn-name">MCP Server</div>
+    <div class="fn-sub">seed_sandbox<br>seed_profiles<br>seed_events<br>reset_sandbox</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node">
+    <div class="fn-icon">🎲</div>
+    <div class="fn-name">DataGenerator</div>
+    <div class="fn-sub">synthetic profiles<br>RFM distribution<br>event history</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node">
+    <div class="fn-icon">📬</div>
+    <div class="fn-name">Klaviyo API v3</div>
+    <div class="fn-sub">/api/profiles/<br>/api/lists/<br>/api/events/</div>
+  </div>
+</div>
+
+<hr>
+
+<!-- SEGMENTS -->
+<p class="eyebrow">Synthetic Customer Segments (standard scenario)</p>
+<div class="seg-grid">
+  <div class="seg-card c1">
+    <div class="seg-pct">10%</div>
+    <div class="seg-name">Champions</div>
+    <span class="seg-pill">1–30d recency</span>
+    <span class="seg-pill">5–15 orders</span>
+    <span class="seg-pill">$180–380 AOV</span>
+  </div>
+  <div class="seg-card c2">
+    <div class="seg-pct">20%</div>
+    <div class="seg-name">Loyal</div>
+    <span class="seg-pill">15–60d recency</span>
+    <span class="seg-pill">3–8 orders</span>
+    <span class="seg-pill">$120–250 AOV</span>
+  </div>
+  <div class="seg-card c3">
+    <div class="seg-pct">20%</div>
+    <div class="seg-name">At-Risk</div>
+    <span class="seg-pill">61–120d recency</span>
+    <span class="seg-pill">2–5 orders</span>
+    <span class="seg-pill">$90–200 AOV</span>
+  </div>
+  <div class="seg-card c4">
+    <div class="seg-pct">25%</div>
+    <div class="seg-name">Lapsed</div>
+    <span class="seg-pill">121–365d recency</span>
+    <span class="seg-pill">1–3 orders</span>
+    <span class="seg-pill">$70–160 AOV</span>
+  </div>
+  <div class="seg-card c5">
+    <div class="seg-pct">25%</div>
+    <div class="seg-name">New</div>
+    <span class="seg-pill">1–45d recency</span>
+    <span class="seg-pill">1–2 orders</span>
+    <span class="seg-pill">$60–160 AOV</span>
+  </div>
+</div>
+
+<hr>
+
+<!-- TOOLS -->
+<h2>MCP Tools</h2>
+<table class="tools-table">
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Description</th>
+      <th>Example prompt to Claude</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="tool-name">seed_sandbox</span></td>
+      <td>Full end-to-end seed: lists, profiles, events</td>
+      <td><span class="tool-example">"Seed this account with 250 profiles, standard scenario"</span></td>
+    </tr>
+    <tr>
+      <td><span class="tool-name">seed_profiles</span></td>
+      <td>Profiles only, filtered by RFM segment</td>
+      <td><span class="tool-example">"Add 50 lapsed customers to the sandbox"</span></td>
+    </tr>
+    <tr>
+      <td><span class="tool-name">seed_events</span></td>
+      <td>Track historical events for existing profiles</td>
+      <td><span class="tool-example">"Track 6 months of purchase events"</span></td>
+    </tr>
+    <tr>
+      <td><span class="tool-name">create_lists</span></td>
+      <td>Create all 9 standard segment lists</td>
+      <td><span class="tool-example">"Set up the standard lists"</span></td>
+    </tr>
+    <tr>
+      <td><span class="tool-name">reset_sandbox</span></td>
+      <td>Delete all seeded profiles for a clean slate</td>
+      <td><span class="tool-example">"Reset the sandbox so I can demo again"</span></td>
+    </tr>
+    <tr>
+      <td><span class="tool-name">describe_sandbox</span></td>
+      <td>Summary of current account state</td>
+      <td><span class="tool-example">"What's currently in this sandbox?"</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- EXTENDING -->
+<h2>Making it reusable across verticals</h2>
+<div class="extend-grid">
+  <div class="extend-card">
+    <h4>Only one file is brand-specific</h4>
+    <p><code>src/generator.js</code> holds the product catalog, AOV ranges, and event properties. Everything else — the MCP interface, Klaviyo client, rate limiting — is completely generic.</p>
+  </div>
+  <div class="extend-card">
+    <h4>Swap the generator to change verticals</h4>
+    <p>Replace <code>PRODUCTS</code>, AOV ranges in <code>SEGMENT_CONFIG</code>, and <code>_eventProps()</code>. Same MCP tools, same Claude prompts, different brand data.</p>
+  </div>
+  <div class="extend-card">
+    <h4>Scenarios shape the RFM mix</h4>
+    <p>Partners can pick <code>standard</code>, <code>growth</code>, or <code>churn_risk</code> to demonstrate different Klaviyo use cases without changing any code.</p>
+  </div>
+  <div class="extend-card">
+    <h4>Clean resets between demos</h4>
+    <p>Every seeded profile is tagged <code>_seeder: true</code>. <code>reset_sandbox</code> deletes only those — real account data is never touched.</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- SETUP -->
+<h2>Setup in 3 steps</h2>
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h4>Install & configure</h4>
+      <p><code>npm install</code> then add your Klaviyo private API key to <code>config.json</code> or set <code>KLAVIYO_API_KEY</code> as an env var. Key needs: profiles, lists, events read/write scopes.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h4>Register with Claude Desktop</h4>
+      <p>Add one entry to <code>claude_desktop_config.json</code> pointing at <code>src/index.js</code>. Restart Claude Desktop. The seeder tools appear automatically.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h4>Tell Claude to seed the account</h4>
+      <p>Say "seed this Klaviyo account with 250 profiles, standard scenario." Claude calls the tools, logs progress, and your sandbox is ready in minutes.</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>The pitch:</strong> Partners spend hours manually setting up demo accounts. This MCP server turns that into a single sentence to Claude. It's reusable across any Klaviyo account, extensible to any vertical, and resets cleanly between demos — so partners can focus on the story, not the setup.
+</div>
+
+</body>
+</html>
