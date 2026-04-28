@@ -1,72 +1,76 @@
 # Sequence Diagram — Generate Campaign
 
-What happens step by step when a user clicks **Generate** on the Generate tab.
+Two paths depending on delivery type selected.
 
-Both paths (Email Campaign and Multi-step Flow) are shown.
+---
+
+## Shared: Copy Generation
 
 ```mermaid
 sequenceDiagram
     actor User
     participant UI as App.jsx
-    participant Server as Express /api/generate-campaign
+    participant Server as Express
     participant Claude as Anthropic API
-    participant Pollinations as Pollinations.ai
-    participant Klaviyo as Klaviyo API
 
-    User->>UI: Enter brand/product/tone, pick type + options, click Generate
-    UI->>Server: POST /api/generate-campaign {apiKey, brandName, productName, campaignType, tone, deliveryType, ...}
+    User->>UI: Enter brand/product/tone, click Generate
+    UI->>Server: POST /api/generate-campaign
     Server-->>UI: SSE stream opens
 
-    Server->>Claude: messages.create — request copy JSON matching campaign shape
-    Claude-->>Server: JSON {subject, headline, body, cta, image_prompt, ...}
-    Server-->>UI: SSE progress "Subject: ..., Headline: ..." (35%)
+    Server->>Claude: messages.create — request copy JSON
+    Claude-->>Server: {subject, headline, body, cta, image_prompt}
+    Server-->>UI: SSE "Subject: ..., Headline: ..." (35%)
+    Note over Server: buildEmailHtml() bakes<br/>Pollinations.ai URL into HTML
+```
 
-    Note over Server: buildEmailHtml() — bakes Pollinations.ai URL into template HTML
-    Note over Pollinations: Image generated lazily when email client loads the URL
+---
 
-    alt Email Campaign
+## Path A: Email Campaign
 
-        Server->>Klaviyo: POST /templates/ — create named HTML template
-        Klaviyo-->>Server: templateId
-        Server-->>UI: SSE progress "✓ Template created"
+```mermaid
+sequenceDiagram
+    participant Server as Express
+    participant Klaviyo as Klaviyo API
 
-        Server->>Klaviyo: GET /lists/ — find "Newsletter Subscribers" (or first list)
-        Klaviyo-->>Server: list ID
+    Server->>Klaviyo: POST /templates/
+    Note right of Klaviyo: Named HTML template<br/>visible in Content → Templates
+    Klaviyo-->>Server: templateId
 
-        Server->>Klaviyo: POST /campaigns/ — create draft campaign with message stub
-        Klaviyo-->>Server: {campaignId, messageId}
-        Server-->>UI: SSE progress "✓ Campaign created"
+    Server->>Klaviyo: GET /lists/ — find audience list
+    Klaviyo-->>Server: listId
 
-        Server->>Klaviyo: POST /campaign-message-assign-template/ — link template to message
-        Klaviyo-->>Server: updated message with cloned template
-        Server-->>UI: SSE progress "✓ Template assigned"
+    Server->>Klaviyo: POST /campaigns/
+    Note right of Klaviyo: Draft campaign<br/>with message stub
+    Klaviyo-->>Server: campaignId + messageId
 
-        Server-->>UI: SSE done "Campaign created in Klaviyo (draft)"
+    Server->>Klaviyo: POST /campaign-message-assign-template/
+    Note right of Klaviyo: Klaviyo clones template<br/>and links it to message
+    Klaviyo-->>Server: 200 OK
+```
 
-    else Multi-step Flow
+---
 
-        Server->>Klaviyo: GET /lists/ — find trigger list
-        Klaviyo-->>Server: listId
+## Path B: Multi-step Flow
 
-        Server->>Klaviyo: POST /templates/ — Step 1 email
-        Server->>Klaviyo: POST /templates/ — Step 2 email
-        Server->>Klaviyo: POST /templates/ — Step 3 email
-        Server-->>UI: SSE progress "✓ Templates created"
+```mermaid
+sequenceDiagram
+    participant Server as Express
+    participant Klaviyo as Klaviyo API
 
-        opt includeConditionalSplit + includeSMS
-            Server->>Klaviyo: POST /templates/ — branch_yes email (if email branch)
-        end
-        opt includeConditionalSplit
-            Server->>Klaviyo: POST /templates/ — branch_no follow-up email
-        end
+    Server->>Klaviyo: GET /lists/ — find trigger list
+    Klaviyo-->>Server: listId
 
-        Note over Server: Assemble actions array with temporary_id + links.next graph:<br/>e1 → delay → e2 → delay → e3 → [split → branch_yes / branch_no]
+    Server->>Klaviyo: POST /templates/ × 3
+    Note right of Klaviyo: One template per email step
+    Klaviyo-->>Server: tmplId1, tmplId2, tmplId3
 
-        Server->>Klaviyo: POST /flows/ (beta revision 2024-10-15.pre)<br/>— full definition: triggers, entry_action_id, actions[]
-        Klaviyo-->>Server: flowId (HTTP 201)
-        Server-->>UI: SSE done "Flow created in Klaviyo"
-
+    opt Conditional split enabled
+        Server->>Klaviyo: POST /templates/ — branch_yes email
+        Server->>Klaviyo: POST /templates/ — branch_no email
+        Klaviyo-->>Server: template IDs
     end
 
-    UI->>User: Progress bar green, log shows result
+    Server->>Klaviyo: POST /flows/ (beta revision)
+    Note right of Klaviyo: Full action graph:<br/>e1→delay→e2→delay→e3<br/>→split→yes/no branches
+    Klaviyo-->>Server: flowId (201 Created)
 ```

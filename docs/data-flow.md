@@ -1,58 +1,70 @@
-# Data Flow Diagram
+# System Architecture
 
-High-level view of how data moves through the system.
+Three focused diagrams: overall architecture, seeding data flow, and campaign generation data flow.
+
+---
+
+## Overall Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Browser["Browser (React + Vite :5173)"]
-        UI["App.jsx\nSeed tab / Generate tab"]
-    end
+graph TD
+    Browser["Browser\nReact + Vite :5173"]
+    Server["Express Server\n:3001"]
+    Klaviyo["Klaviyo REST API\na.klaviyo.com/api"]
+    Anthropic["Anthropic API\nclaude-sonnet-4-6"]
+    Pollinations["Pollinations.ai\nAI image generation"]
 
-    subgraph Server["Express Server (:3001)"]
-        SEED["/api/seed\nSSE stream"]
-        RESET["/api/reset\nJSON response"]
-        GEN["/api/generate-campaign\nSSE stream"]
-        SESSION["In-memory session store\nsessionId → apiKey"]
-    end
+    Browser -->|"POST /api/seed\nPOST /api/reset\nPOST /api/generate-campaign"| Server
+    Server -->|"SSE progress stream\nor JSON response"| Browser
+    Server -->|"profiles, lists,\nevents, templates,\ncampaigns, flows"| Klaviyo
+    Server -->|"generate copy\n+ image prompt"| Anthropic
+    Server -->|"image URL baked\ninto email HTML"| Pollinations
+```
 
-    subgraph Klaviyo["Klaviyo REST API\na.klaviyo.com/api"]
-        KL_LISTS["Lists\nPOST /lists/\nPOST /lists/:id/relationships/profiles/"]
-        KL_PROFILES["Profiles\nPOST /profiles/"]
-        KL_EVENTS["Events\nPOST /events/"]
-        KL_TEMPLATES["Templates\nPOST /templates/"]
-        KL_CAMPAIGNS["Campaigns\nPOST /campaigns/\nPOST /campaign-message-assign-template/"]
-        KL_FLOWS["Flows (beta)\nPOST /flows/\nrevision: 2024-10-15.pre"]
-        KL_DELETE["Data Privacy\nPOST /data-privacy-deletion-jobs/\nDELETE /lists/:id/"]
-    end
+---
 
-    subgraph External["External Services"]
-        ANTHROPIC["Anthropic API\nclaude-sonnet-4-6\nCopy + image prompts"]
-        POLLINATIONS["Pollinations.ai\nAI image generation\nno API key required"]
-    end
+## Seeding Data Flow
 
-    UI -->|"POST /api/seed\n{apiKey, scenario, profileCount}"| SEED
-    UI -->|"POST /api/reset\n{apiKey}"| RESET
-    UI -->|"POST /api/generate-campaign\n{apiKey, brandName, ...}"| GEN
+```mermaid
+graph TD
+    A["/api/seed\nreceives apiKey + scenario + count"]
+    B["Create __Seeder list\n+ 9 standard lists"]
+    C["Generate profiles\nper RFM segment"]
+    D["Upsert each profile\nPOST /profiles/"]
+    E["Add profile to\n__Seeder list + segment list"]
+    F["Fetch all seeded\nprofile IDs"]
+    G["Generate + track events\nPOST /events/\nfor each profile"]
+    H["SSE done\nsessionId saved to memory"]
 
-    SEED -->|"SSE progress events"| UI
-    GEN -->|"SSE progress events"| UI
-    RESET -->|"JSON {message}"| UI
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E -->|"repeat per profile"| D
+    E --> F
+    F --> G
+    G --> H
+```
 
-    SEED --> KL_LISTS
-    SEED --> KL_PROFILES
-    SEED --> KL_EVENTS
-    SEED -->|"saves sessionId → apiKey"| SESSION
+---
 
-    RESET --> KL_DELETE
+## Campaign Generation Data Flow
 
-    GEN -->|"generateCampaignCopy()"| ANTHROPIC
-    ANTHROPIC -->|"JSON copy + image_prompt"| GEN
+```mermaid
+graph TD
+    A["/api/generate-campaign\napiKey + brand + type + options"]
+    B["Claude generates copy\nJSON: subject, headline,\nbody, cta, image_prompt"]
+    C["buildEmailHtml\nPollinations.ai URL\nbaked into HTML"]
 
-    GEN -->|"image URL baked into HTML"| POLLINATIONS
+    A --> B
+    B --> C
 
-    GEN -->|"Email Campaign path"| KL_TEMPLATES
-    GEN -->|"Email Campaign path"| KL_CAMPAIGNS
+    C --> D{"deliveryType?"}
 
-    GEN -->|"Multi-step Flow path"| KL_TEMPLATES
-    GEN -->|"Multi-step Flow path"| KL_FLOWS
+    D -->|"Email Campaign"| E["POST /templates/\ncreate named template"]
+    E --> F["POST /campaigns/\ncreate draft + message stub"]
+    F --> G["POST /campaign-message-assign-template/\nlink template to message"]
+
+    D -->|"Multi-step Flow"| H["POST /templates/\none per email step\n(up to 5 templates)"]
+    H --> I["POST /flows/ (beta)\nfull action graph:\nemails → delays → split → branches"]
 ```
