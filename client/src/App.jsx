@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 // POST to `url` with JSON body, read the SSE response, call callbacks per event type.
 // onDone / onError receive the full parsed data object (may contain extra fields like sessionId).
@@ -73,6 +73,14 @@ const PROFILE_COUNTS = [5, 50, 100, 250, 500];
 export default function App() {
   // ── Seeding state ──────────────────────────────────────
   const [apiKey, setApiKey] = useState('');
+  const [hasServerKey, setHasServerKey] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(d => setHasServerKey(!!d.hasServerKey))
+      .catch(() => {});
+  }, []);
   const [industry, setIndustry] = useState(INDUSTRIES[0]);
   const [profileCount, setProfileCount] = useState(50);
   const [status, setStatus] = useState('idle'); // idle | running | done | error
@@ -126,7 +134,7 @@ export default function App() {
   }
 
   async function handleSeed() {
-    if (!apiKey.trim()) return alert('Enter your Klaviyo private API key first.');
+    if (!hasKey) return alert('Enter your Klaviyo private API key first.');
     setStatus('running');
     setLog([]);
     setSessionId(null);
@@ -155,7 +163,7 @@ export default function App() {
   }
 
   async function handleReset() {
-    if (!apiKey.trim()) return alert('Enter your Klaviyo private API key first.');
+    if (!hasKey) return alert('Enter your Klaviyo private API key first.');
     setResetConfirm(false);
     setSessionId(null);
     setStatus('running');
@@ -181,7 +189,7 @@ export default function App() {
   }
 
   async function handleResetGenerated() {
-    if (!apiKey.trim()) return alert('Enter your Klaviyo private API key first.');
+    if (!hasKey) return alert('Enter your Klaviyo private API key first.');
     setResetGeneratedConfirm(false);
     setCampaignStatus('running');
     setCampaignLog([]);
@@ -205,7 +213,7 @@ export default function App() {
   }
 
   async function handleGenerate() {
-    if (!apiKey.trim()) return alert('Enter your Klaviyo private API key first.');
+    if (!hasKey) return alert('Enter your Klaviyo private API key first.');
     const resolvedType = campaignType === 'Custom' ? customType.trim() : campaignType;
     if (!resolvedType) return alert('Enter a custom campaign type.');
     if (!brandName.trim()) return alert('Enter a brand name.');
@@ -250,6 +258,7 @@ export default function App() {
   }
 
   const isRunning = status === 'running';
+  const hasKey = hasServerKey || !!apiKey.trim();
 
   return (
     <div style={s.page}>
@@ -266,18 +275,34 @@ export default function App() {
         {/* Shared API key */}
         <div style={{ ...s.field, marginBottom: 24 }}>
           <label style={s.label}>Private API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="pk_live_..."
-            style={s.input}
-            disabled={isRunning || generating}
-            autoComplete="off"
-          />
-          <span style={s.hint}>
-            Klaviyo &rsaquo; Account &rsaquo; API Keys &rsaquo; Create Private API Key (full access)
-          </span>
+          {hasServerKey && !apiKey ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ ...s.hint, color: '#16a34a', fontSize: 13 }}>
+                ✓ Using key from server environment
+              </span>
+              <button
+                onClick={() => setHasServerKey(false)}
+                style={{ ...s.logClearBtn, fontSize: 11 }}
+              >
+                Use a different key
+              </button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="pk_live_..."
+              style={s.input}
+              disabled={isRunning || generating}
+              autoComplete="off"
+            />
+          )}
+          {!hasServerKey && (
+            <span style={s.hint}>
+              Klaviyo &rsaquo; Account &rsaquo; API Keys &rsaquo; Create Private API Key (full access)
+            </span>
+          )}
         </div>
 
         {/* Tabs */}
@@ -349,8 +374,8 @@ export default function App() {
             <div style={s.actions}>
               <button
                 onClick={handleSeed}
-                disabled={isRunning || !apiKey.trim()}
-                style={{ ...s.seedBtn, ...(isRunning || !apiKey.trim() ? s.btnDisabled : {}) }}
+                disabled={isRunning || !hasKey}
+                style={{ ...s.seedBtn, ...(isRunning || !hasKey ? s.btnDisabled : {}) }}
               >
                 {isRunning ? 'Seeding...' : 'Seed Sandbox'}
               </button>
@@ -358,8 +383,8 @@ export default function App() {
               {!resetConfirm ? (
                 <button
                   onClick={() => setResetConfirm(true)}
-                  disabled={isRunning || !apiKey.trim()}
-                  style={{ ...s.resetBtn, ...(isRunning || !apiKey.trim() ? s.btnDisabled : {}) }}
+                  disabled={isRunning || !hasKey}
+                  style={{ ...s.resetBtn, ...(isRunning || !hasKey ? s.btnDisabled : {}) }}
                 >
                   Reset
                 </button>
@@ -555,10 +580,10 @@ export default function App() {
             <div style={s.actions}>
               <button
                 onClick={handleGenerate}
-                disabled={generating || !apiKey.trim() || !brandName.trim() || !productName.trim()}
+                disabled={generating || !hasKey || !brandName.trim() || !productName.trim()}
                 style={{
                   ...s.seedBtn,
-                  ...((generating || !apiKey.trim() || !brandName.trim() || !productName.trim()) ? s.btnDisabled : {}),
+                  ...((generating || !hasKey || !brandName.trim() || !productName.trim()) ? s.btnDisabled : {}),
                 }}
               >
                 {generating ? 'Generating...' : 'Generate Campaign'}
@@ -567,8 +592,8 @@ export default function App() {
               {!resetGeneratedConfirm ? (
                 <button
                   onClick={() => setResetGeneratedConfirm(true)}
-                  disabled={generating || !apiKey.trim()}
-                  style={{ ...s.resetBtn, ...(generating || !apiKey.trim() ? s.btnDisabled : {}) }}
+                  disabled={generating || !hasKey}
+                  style={{ ...s.resetBtn, ...(generating || !hasKey ? s.btnDisabled : {}) }}
                 >
                   Reset generated
                 </button>

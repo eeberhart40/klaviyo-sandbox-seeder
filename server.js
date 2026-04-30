@@ -518,6 +518,13 @@ app.post('/api/reset-generated', async (req, res) => {
   }
 });
 
+// ── GET /api/config ───────────────────────────────────────────────────────────
+// Tells the frontend whether a server-side Klaviyo key is available so the UI
+// can pre-populate or hide the API key field.
+app.get('/api/config', (_req, res) => {
+  res.json({ hasServerKey: !!process.env.KLAVIYO_API_KEY });
+});
+
 // ── POST /api/status ──────────────────────────────────────────────────────────
 app.post('/api/status', async (req, res) => {
   const { apiKey } = req.body;
@@ -597,8 +604,15 @@ app.post('/api/generate-campaign', async (req, res) => {
 
 // ── MCP endpoint ──────────────────────────────────────────────────────────────
 // Each request gets a fresh stateless transport + McpServer instance.
-// The Klaviyo API key is passed as a tool argument on every call — no shared
-// session state needed, which makes this safe for multi-tenant use.
+// api_key is optional on all tools — falls back to KLAVIYO_API_KEY in .env.
+// This means the server works out of the box for local/demo use without requiring
+// the user to pass the key in every message to Claude Desktop.
+
+function resolveKey(api_key) {
+  const key = api_key || process.env.KLAVIYO_API_KEY;
+  if (!key) throw new Error('No Klaviyo API key — either pass api_key or set KLAVIYO_API_KEY in .env');
+  return key;
+}
 
 function buildMcpServer() {
   const mcp = new McpServer({
@@ -610,13 +624,13 @@ function buildMcpServer() {
   mcp.registerTool('seed_sandbox', {
     description: 'Seed a Klaviyo sandbox end-to-end: creates lists, profiles with RFM segments, and historical events. Use this to populate a fresh Klaviyo trial account for demos.',
     inputSchema: {
-      api_key:       z.string().describe('Klaviyo private API key (pk_...)'),
+      api_key:       z.string().optional().describe('Klaviyo private API key (pk_...) — omit to use KLAVIYO_API_KEY from .env'),
       profile_count: z.number().optional().describe('Number of profiles to create (default: 50)'),
       scenario:      z.enum(['standard', 'growth', 'churn_risk']).optional()
                       .describe('standard = healthy mix, growth = lots of new customers, churn_risk = many lapsed'),
     },
   }, async ({ api_key, profile_count = 50, scenario = 'standard' }) => {
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const generator = new DataGenerator({});
     const lines = [];
 
@@ -654,12 +668,12 @@ function buildMcpServer() {
   mcp.registerTool('reset_sandbox', {
     description: 'Delete all seeded profiles and lists from the Klaviyo account. Profile/event deletion is async and may take up to 24 hours to fully clear from Klaviyo dashboards.',
     inputSchema: {
-      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+      api_key: z.string().optional().describe('Klaviyo private API key (pk_...) — omit to use KLAVIYO_API_KEY from .env'),
       confirm: z.boolean().describe('Must be true to proceed'),
     },
   }, async ({ api_key, confirm }) => {
     if (!confirm) return { content: [{ type: 'text', text: 'Aborted — pass confirm: true to proceed.' }] };
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const profiles = await client.deleteSeededProfiles();
     const lists = await client.deleteSeededLists();
     return { content: [{ type: 'text', text: `Reset complete — ${profiles} profiles queued for deletion, ${lists} lists removed.` }] };
@@ -669,12 +683,12 @@ function buildMcpServer() {
   mcp.registerTool('reset_generated', {
     description: 'Delete all campaigns, flows, and templates created by the sandbox seeder (identified by [seeder] tag in name).',
     inputSchema: {
-      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+      api_key: z.string().optional().describe('Klaviyo private API key (pk_...) — omit to use KLAVIYO_API_KEY from .env'),
       confirm: z.boolean().describe('Must be true to proceed'),
     },
   }, async ({ api_key, confirm }) => {
     if (!confirm) return { content: [{ type: 'text', text: 'Aborted — pass confirm: true to proceed.' }] };
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const campaigns = await client.deleteSeededCampaigns();
     const flows = await client.deleteSeededFlows();
     const templates = await client.deleteSeededTemplates();
@@ -685,14 +699,14 @@ function buildMcpServer() {
   mcp.registerTool('generate_campaign', {
     description: 'Use Claude to write copy and create a single email campaign (draft) in Klaviyo. Generates a hero image via Pollinations.ai.',
     inputSchema: {
-      api_key:       z.string().describe('Klaviyo private API key (pk_...)'),
+      api_key:       z.string().optional().describe('Klaviyo private API key (pk_...) — omit to use KLAVIYO_API_KEY from .env'),
       brand_name:    z.string().describe('Brand name, e.g. "Arc & Thread"'),
       product_name:  z.string().describe('Product or offer, e.g. "Summer Linen Collection — 20% off"'),
       campaign_type: z.string().describe('e.g. "New Product Launch", "Holiday Promotion", "Win-Back"'),
       tone:          z.enum(['aspirational', 'minimal', 'playful']).optional().describe('Copy tone (default: aspirational)'),
     },
   }, async ({ api_key, brand_name, product_name, campaign_type, tone = 'aspirational' }) => {
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const copy = await generateCampaignCopy({ brandName: brand_name, productName: product_name, campaignType: campaign_type, tone, isFlow: false, includeSMSBranch: false });
     const sink = { write: () => {} };
     await createEmailCampaign(client, copy, { brandName: brand_name, campaignType: campaign_type }, sink);
@@ -712,7 +726,7 @@ function buildMcpServer() {
       include_sms:               z.boolean().optional().describe('Yes branch sends SMS instead of email (default: false)'),
     },
   }, async ({ api_key, brand_name, product_name, campaign_type, tone = 'aspirational', include_conditional_split = true, include_sms = false }) => {
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const includeSMSBranch = include_conditional_split && include_sms;
     const copy = await generateCampaignCopy({ brandName: brand_name, productName: product_name, campaignType: campaign_type, tone, isFlow: true, includeSMSBranch });
     const sink = { write: () => {} };
@@ -724,10 +738,10 @@ function buildMcpServer() {
   mcp.registerTool('sandbox_status', {
     description: 'Return a summary of what lists and seeded profiles currently exist in the Klaviyo account.',
     inputSchema: {
-      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+      api_key: z.string().optional().describe('Klaviyo private API key (pk_...) — omit to use KLAVIYO_API_KEY from .env'),
     },
   }, async ({ api_key }) => {
-    const client = new KlaviyoClient(api_key);
+    const client = new KlaviyoClient(resolveKey(api_key));
     const summary = await client.getSandboxSummary();
     return { content: [{ type: 'text', text: summary }] };
   });
