@@ -495,17 +495,21 @@ app.post('/api/reset-generated', async (req, res) => {
 
   try {
     const client = new KlaviyoClient(apiKey);
-    const [campaigns, flows, templates] = await Promise.all([
-      client.deleteSeededCampaigns(),
-      client.deleteSeededFlows(),
-      client.deleteSeededTemplates(),
-    ]);
+    console.log('[reset-generated] starting — scanning campaigns, flows, templates');
+    const campaigns = await client.deleteSeededCampaigns();
+    console.log(`[reset-generated] campaigns deleted: ${campaigns}`);
+    const flows = await client.deleteSeededFlows();
+    console.log(`[reset-generated] flows deleted: ${flows}`);
+    const templates = await client.deleteSeededTemplates();
+    console.log(`[reset-generated] templates deleted: ${templates}`);
     const total = campaigns + flows + templates;
     const message = total === 0
       ? 'No generated content found — nothing to delete.'
       : `Reset complete — ${campaigns} campaign(s), ${flows} flow(s), ${templates} template(s) deleted.`;
+    console.log(`[reset-generated] done — ${message}`);
     res.json({ message });
   } catch (err) {
+    console.log(`[reset-generated] error: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

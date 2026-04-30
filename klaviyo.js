@@ -324,8 +324,10 @@ export class KlaviyoClient {
     let cursor = null;
     do {
       await this._rateLimit();
-      const qs = cursor ? `${path.includes('?') ? '&' : '?'}page[cursor]=${cursor}` : '';
-      const res = await this._fetch('GET', `${path}${qs}`);
+      const sep = path.includes('?') ? '&' : '?';
+      const url = cursor ? `${path}${sep}page[cursor]=${cursor}` : path;
+      const res = await this._fetch('GET', url);
+      if (!res.ok) break;
       const data = await res.json();
       items.push(...(data?.data ?? []));
       cursor = data?.links?.next
@@ -335,12 +337,24 @@ export class KlaviyoClient {
     return items;
   }
 
+  _isSeederObject(name) {
+    if (!name) return false;
+    // Tagged items (current behavior)
+    if (name.includes('[seeder]')) return true;
+    // Pre-tagging items: template names follow "Flow Name — Step N" or "Flow Name — Engaged/Follow-up"
+    if (/— Step \d+$/.test(name)) return true;
+    if (/— (Engaged|Follow-up|AI Flow)$/.test(name)) return true;
+    return false;
+  }
+
   async deleteSeededCampaigns() {
-    const all = await this._paginatedGet('/campaigns/?filter=equals(messages.channel,"email")');
-    const seeded = all.filter(c => c.attributes?.name?.includes('[seeder]'));
+    const all = await this._paginatedGet('/campaigns/');
+    const seeded = all.filter(c => this._isSeederObject(c.attributes?.name));
+    console.log(`[klaviyo] found ${seeded.length} seeder campaigns to delete`);
     let deleted = 0;
     for (const c of seeded) {
       await this._rateLimit();
+      console.log(`[klaviyo] deleting campaign "${c.attributes?.name}" (${c.id})`);
       const res = await this._fetch('DELETE', `/campaigns/${c.id}/`);
       if (res.ok || res.status === 404) deleted++;
     }
@@ -349,24 +363,36 @@ export class KlaviyoClient {
 
   async deleteSeededFlows() {
     const all = await this._paginatedGet('/flows/');
-    const seeded = all.filter(f => f.attributes?.name?.includes('[seeder]'));
+    const seeded = all.filter(f => this._isSeederObject(f.attributes?.name));
+    console.log(`[klaviyo] found ${seeded.length} seeder flows to delete`);
     let deleted = 0;
     for (const f of seeded) {
       await this._rateLimit();
+      console.log(`[klaviyo] deleting flow "${f.attributes?.name}" (${f.id})`);
       const res = await this._fetch('DELETE', `/flows/${f.id}/`);
       if (res.ok || res.status === 404) deleted++;
+      else {
+        const err = await res.json().catch(() => ({}));
+        console.log(`[klaviyo] flow delete failed (${res.status}): ${JSON.stringify(err)}`);
+      }
     }
     return deleted;
   }
 
   async deleteSeededTemplates() {
     const all = await this._paginatedGet('/templates/');
-    const seeded = all.filter(t => t.attributes?.name?.includes('[seeder]'));
+    const seeded = all.filter(t => this._isSeederObject(t.attributes?.name));
+    console.log(`[klaviyo] found ${seeded.length} seeder templates to delete`);
     let deleted = 0;
     for (const t of seeded) {
       await this._rateLimit();
+      console.log(`[klaviyo] deleting template "${t.attributes?.name}" (${t.id})`);
       const res = await this._fetch('DELETE', `/templates/${t.id}/`);
       if (res.ok || res.status === 404) deleted++;
+      else {
+        const err = await res.json().catch(() => ({}));
+        console.log(`[klaviyo] template delete failed (${res.status}): ${JSON.stringify(err)}`);
+      }
     }
     return deleted;
   }
