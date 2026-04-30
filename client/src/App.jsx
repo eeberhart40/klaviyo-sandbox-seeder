@@ -102,6 +102,7 @@ export default function App() {
   const [campaignProgress, setCampaignProgress] = useState(0);
   const campaignLogRef = useRef(null);
   const [sessionId, setSessionId] = useState(null); // kept for legacy session compat
+  const [resetGeneratedConfirm, setResetGeneratedConfirm] = useState(false);
 
   function appendLog(msg, type = 'info') {
     setLog(prev => [...prev, { msg, type, id: Date.now() + Math.random() }]);
@@ -176,6 +177,30 @@ export default function App() {
     } catch (err) {
       appendLog(`Error: ${err.message}`, 'error');
       setStatus('error');
+    }
+  }
+
+  async function handleResetGenerated() {
+    if (!apiKey.trim()) return alert('Enter your Klaviyo private API key first.');
+    setResetGeneratedConfirm(false);
+    setCampaignStatus('running');
+    setCampaignLog([]);
+    setCampaignProgress(0);
+    appendCampaignLog('Deleting seeder-generated campaigns, flows, and templates...');
+    try {
+      const res = await fetch('/api/reset-generated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Reset failed');
+      appendCampaignLog(data.message, 'done');
+      setCampaignProgress(100);
+      setCampaignStatus('done');
+    } catch (err) {
+      appendCampaignLog(`Error: ${err.message}`, 'error');
+      setCampaignStatus('error');
     }
   }
 
@@ -339,10 +364,15 @@ export default function App() {
                   Reset
                 </button>
               ) : (
-                <div style={s.confirmRow}>
-                  <span style={s.confirmText}>Delete all seeded data?</span>
-                  <button onClick={handleReset} style={s.confirmYes}>Yes, reset</button>
-                  <button onClick={() => setResetConfirm(false)} style={s.confirmNo}>Cancel</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={s.confirmRow}>
+                    <span style={s.confirmText}>Delete all seeded profiles &amp; lists?</span>
+                    <button onClick={handleReset} style={s.confirmYes}>Yes, reset</button>
+                    <button onClick={() => setResetConfirm(false)} style={s.confirmNo}>Cancel</button>
+                  </div>
+                  <span style={{ ...s.hint, fontSize: 11 }}>
+                    Profile and event data deletion is processed asynchronously by Klaviyo and may take up to 24 hours to fully clear.
+                  </span>
                 </div>
               )}
             </div>
@@ -522,16 +552,34 @@ export default function App() {
               )}
             </div>
 
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !apiKey.trim() || !brandName.trim() || !productName.trim()}
-              style={{
-                ...s.seedBtn,
-                ...((generating || !apiKey.trim() || !brandName.trim() || !productName.trim()) ? s.btnDisabled : {}),
-              }}
-            >
-              {generating ? 'Generating...' : 'Generate Campaign'}
-            </button>
+            <div style={s.actions}>
+              <button
+                onClick={handleGenerate}
+                disabled={generating || !apiKey.trim() || !brandName.trim() || !productName.trim()}
+                style={{
+                  ...s.seedBtn,
+                  ...((generating || !apiKey.trim() || !brandName.trim() || !productName.trim()) ? s.btnDisabled : {}),
+                }}
+              >
+                {generating ? 'Generating...' : 'Generate Campaign'}
+              </button>
+
+              {!resetGeneratedConfirm ? (
+                <button
+                  onClick={() => setResetGeneratedConfirm(true)}
+                  disabled={generating || !apiKey.trim()}
+                  style={{ ...s.resetBtn, ...(generating || !apiKey.trim() ? s.btnDisabled : {}) }}
+                >
+                  Reset generated
+                </button>
+              ) : (
+                <div style={s.confirmRow}>
+                  <span style={s.confirmText}>Delete all seeder campaigns, flows &amp; templates?</span>
+                  <button onClick={handleResetGenerated} style={s.confirmYes}>Yes, reset</button>
+                  <button onClick={() => setResetGeneratedConfirm(false)} style={s.confirmNo}>Cancel</button>
+                </div>
+              )}
+            </div>
 
             {campaignStatus !== 'idle' && (
               <div style={{ marginTop: 20 }}>

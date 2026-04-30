@@ -169,7 +169,7 @@ ${shape}`,
 
 // ── Klaviyo campaign creator ──────────────────────────────────────────────────
 async function createEmailCampaign(client, copy, { brandName, campaignType }, res) {
-  const templateName = copy.campaign_name ?? `${brandName} — ${campaignType}`;
+  const templateName = `${copy.campaign_name ?? `${brandName} — ${campaignType}`} [seeder]`;
   const imgSeed = Math.floor(Math.random() * 99999);
   const html = buildEmailHtml(brandName, copy.headline, copy.body, copy.body2, copy.cta, copy.image_prompt, imgSeed);
 
@@ -240,7 +240,7 @@ async function probeFlowSchemas(client, copy, { brandName, includeSMSBranch, inc
   const emailHtml1 = buildEmailHtml(brandName, step1.headline, step1.body, step1.body2, step1.cta, imgPrompt, imgSeed);
   const emailHtml2 = buildEmailHtml(brandName, step2.headline, step2.body, step2.body2, step2.cta, imgPrompt, imgSeed);
 
-  const flowName = copy.flow_name ?? `${brandName} — AI Flow`;
+  const flowName = `${copy.flow_name ?? `${brandName} — AI Flow`} [seeder]`;
 
   // Confirmed schema from Klaviyo docs (2024-10-15.pre):
   // - Actions use `temporary_id` not `id` at create time
@@ -482,6 +482,28 @@ app.post('/api/reset', async (req, res) => {
     const message = submitted === 0 && listsDeleted === 0
       ? 'No seeded data found — nothing to delete. Run a seed first.'
       : `Reset complete — ${submitted} profiles queued for deletion, ${listsDeleted} lists removed.`;
+    res.json({ message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/reset-generated ─────────────────────────────────────────────────
+app.post('/api/reset-generated', async (req, res) => {
+  const { apiKey } = req.body;
+  if (!apiKey) return res.status(400).json({ error: 'apiKey is required' });
+
+  try {
+    const client = new KlaviyoClient(apiKey);
+    const [campaigns, flows, templates] = await Promise.all([
+      client.deleteSeededCampaigns(),
+      client.deleteSeededFlows(),
+      client.deleteSeededTemplates(),
+    ]);
+    const total = campaigns + flows + templates;
+    const message = total === 0
+      ? 'No generated content found — nothing to delete.'
+      : `Reset complete — ${campaigns} campaign(s), ${flows} flow(s), ${templates} template(s) deleted.`;
     res.json({ message });
   } catch (err) {
     res.status(500).json({ error: err.message });

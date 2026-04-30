@@ -317,6 +317,60 @@ export class KlaviyoClient {
     return map[segment] ?? null;
   }
 
+  // ── Generated content reset ───────────────────────────
+
+  async _paginatedGet(path) {
+    const items = [];
+    let cursor = null;
+    do {
+      await this._rateLimit();
+      const qs = cursor ? `${path.includes('?') ? '&' : '?'}page[cursor]=${cursor}` : '';
+      const res = await this._fetch('GET', `${path}${qs}`);
+      const data = await res.json();
+      items.push(...(data?.data ?? []));
+      cursor = data?.links?.next
+        ? new URL(data.links.next).searchParams.get('page[cursor]')
+        : null;
+    } while (cursor);
+    return items;
+  }
+
+  async deleteSeededCampaigns() {
+    const all = await this._paginatedGet('/campaigns/?filter=equals(messages.channel,"email")');
+    const seeded = all.filter(c => c.attributes?.name?.includes('[seeder]'));
+    let deleted = 0;
+    for (const c of seeded) {
+      await this._rateLimit();
+      const res = await this._fetch('DELETE', `/campaigns/${c.id}/`);
+      if (res.ok || res.status === 404) deleted++;
+    }
+    return deleted;
+  }
+
+  async deleteSeededFlows() {
+    const all = await this._paginatedGet('/flows/');
+    const seeded = all.filter(f => f.attributes?.name?.includes('[seeder]'));
+    let deleted = 0;
+    for (const f of seeded) {
+      await this._rateLimit();
+      const res = await this._fetch('DELETE', `/flows/${f.id}/`);
+      if (res.ok || res.status === 404) deleted++;
+    }
+    return deleted;
+  }
+
+  async deleteSeededTemplates() {
+    const all = await this._paginatedGet('/templates/');
+    const seeded = all.filter(t => t.attributes?.name?.includes('[seeder]'));
+    let deleted = 0;
+    for (const t of seeded) {
+      await this._rateLimit();
+      const res = await this._fetch('DELETE', `/templates/${t.id}/`);
+      if (res.ok || res.status === 404) deleted++;
+    }
+    return deleted;
+  }
+
   // ── Templates ─────────────────────────────────────────
 
   async createTemplate(name, html) {
