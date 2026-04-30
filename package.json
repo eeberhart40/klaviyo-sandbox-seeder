@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"node server.js\" \"vite\"",
+    "dev": "concurrently \"node server.js\" \"vite\"",
     "build": "vite build",
-    "mcp": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

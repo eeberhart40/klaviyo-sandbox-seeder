@@ -61,10 +61,37 @@ Opens the app at [http://localhost:5173](http://localhost:5173). The Express ser
 
 ---
 
+## Claude Desktop (MCP)
+
+The same Express server also exposes an MCP endpoint at `POST /mcp`. Once the server is running locally, Claude Desktop can use it directly — no separate process needed.
+
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "klaviyo-sandbox-seeder": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp"
+    }
+  }
+}
+```
+
+Restart Claude Desktop, then ask it things like:
+- "Seed my Klaviyo account with 50 profiles using my key pk_..."
+- "Generate a win-back flow for Arc & Thread selling linen shirts"
+- "Reset all seeded profiles from my Klaviyo sandbox"
+
+**Available MCP tools:** `seed_sandbox`, `reset_sandbox`, `reset_generated`, `generate_campaign`, `generate_flow`, `sandbox_status`
+
+---
+
 ## Stack
 
 - **Frontend**: React + Vite (no CSS framework, inline styles)
 - **Backend**: Express with SSE streaming for real-time progress logs
+- **MCP**: Streamable HTTP transport on `POST /mcp` (same server, same port)
 - **Klaviyo**: REST API v3 (`2024-10-15`), beta Flows API (`2024-10-15.pre`)
 - **AI copy**: Anthropic SDK (`claude-sonnet-4-6`)
 - **AI images**: Pollinations.ai (free, no key required)

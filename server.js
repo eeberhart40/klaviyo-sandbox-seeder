@@ -1,8 +1,12 @@
 // server.js — Express backend for the Klaviyo Sandbox Seeder web app
+// Also exposes an MCP endpoint at POST /mcp for Claude Desktop integration.
 
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
 import express from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { z } from 'zod';
 import { DataGenerator } from './generator.js';
 import { KlaviyoClient } from './klaviyo.js';
 
@@ -591,5 +595,164 @@ app.post('/api/generate-campaign', async (req, res) => {
   }
 });
 
+// ── MCP endpoint ──────────────────────────────────────────────────────────────
+// Each request gets a fresh stateless transport + McpServer instance.
+// The Klaviyo API key is passed as a tool argument on every call — no shared
+// session state needed, which makes this safe for multi-tenant use.
+
+function buildMcpServer() {
+  const mcp = new McpServer({
+    name: 'klaviyo-sandbox-seeder',
+    version: '1.0.0',
+  });
+
+  // ── seed_sandbox ────────────────────────────────────────
+  mcp.registerTool('seed_sandbox', {
+    description: 'Seed a Klaviyo sandbox end-to-end: creates lists, profiles with RFM segments, and historical events. Use this to populate a fresh Klaviyo trial account for demos.',
+    inputSchema: {
+      api_key:       z.string().describe('Klaviyo private API key (pk_...)'),
+      profile_count: z.number().optional().describe('Number of profiles to create (default: 50)'),
+      scenario:      z.enum(['standard', 'growth', 'churn_risk']).optional()
+                      .describe('standard = healthy mix, growth = lots of new customers, churn_risk = many lapsed'),
+    },
+  }, async ({ api_key, profile_count = 50, scenario = 'standard' }) => {
+    const client = new KlaviyoClient(api_key);
+    const generator = new DataGenerator({});
+    const lines = [];
+
+    const lists = await client.createStandardLists();
+    lines.push(`✓ ${lists.length} lists created`);
+
+    const dist = SCENARIO_DISTRIBUTIONS[scenario] ?? SCENARIO_DISTRIBUTIONS.standard;
+    const activeSegs = Object.entries(dist)
+      .map(([seg, pct]) => [seg, Math.round(profile_count * pct)])
+      .filter(([, c]) => c > 0);
+    const roundedTotal = activeSegs.reduce((s, [, c]) => s + c, 0);
+    activeSegs[activeSegs.length - 1][1] += profile_count - roundedTotal;
+
+    let totalProfiles = 0;
+    for (const [seg, count] of activeSegs) {
+      const profiles = generator.generateProfiles(count, seg);
+      const created = await client.upsertProfiles(profiles, seg);
+      totalProfiles += created;
+      lines.push(`  ✓ ${seg}: ${created} profiles`);
+    }
+    lines.push(`✓ ${totalProfiles} total profiles seeded`);
+
+    const profileIds = await client.getAllSeededProfileIds();
+    for (const eventType of ['Placed Order', 'Fulfilled Order', 'Viewed Product', 'Started Checkout']) {
+      const events = generator.generateEvents(profileIds, eventType, 365);
+      const tracked = await client.trackEvents(events);
+      lines.push(`✓ ${tracked} "${eventType}" events tracked`);
+    }
+
+    lines.push('\nSandbox ready.');
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
+  });
+
+  // ── reset_sandbox ───────────────────────────────────────
+  mcp.registerTool('reset_sandbox', {
+    description: 'Delete all seeded profiles and lists from the Klaviyo account. Profile/event deletion is async and may take up to 24 hours to fully clear from Klaviyo dashboards.',
+    inputSchema: {
+      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+      confirm: z.boolean().describe('Must be true to proceed'),
+    },
+  }, async ({ api_key, confirm }) => {
+    if (!confirm) return { content: [{ type: 'text', text: 'Aborted — pass confirm: true to proceed.' }] };
+    const client = new KlaviyoClient(api_key);
+    const profiles = await client.deleteSeededProfiles();
+    const lists = await client.deleteSeededLists();
+    return { content: [{ type: 'text', text: `Reset complete — ${profiles} profiles queued for deletion, ${lists} lists removed.` }] };
+  });
+
+  // ── reset_generated ─────────────────────────────────────
+  mcp.registerTool('reset_generated', {
+    description: 'Delete all campaigns, flows, and templates created by the sandbox seeder (identified by [seeder] tag in name).',
+    inputSchema: {
+      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+      confirm: z.boolean().describe('Must be true to proceed'),
+    },
+  }, async ({ api_key, confirm }) => {
+    if (!confirm) return { content: [{ type: 'text', text: 'Aborted — pass confirm: true to proceed.' }] };
+    const client = new KlaviyoClient(api_key);
+    const campaigns = await client.deleteSeededCampaigns();
+    const flows = await client.deleteSeededFlows();
+    const templates = await client.deleteSeededTemplates();
+    return { content: [{ type: 'text', text: `Reset complete — ${campaigns} campaign(s), ${flows} flow(s), ${templates} template(s) deleted.` }] };
+  });
+
+  // ── generate_campaign ───────────────────────────────────
+  mcp.registerTool('generate_campaign', {
+    description: 'Use Claude to write copy and create a single email campaign (draft) in Klaviyo. Generates a hero image via Pollinations.ai.',
+    inputSchema: {
+      api_key:       z.string().describe('Klaviyo private API key (pk_...)'),
+      brand_name:    z.string().describe('Brand name, e.g. "Arc & Thread"'),
+      product_name:  z.string().describe('Product or offer, e.g. "Summer Linen Collection — 20% off"'),
+      campaign_type: z.string().describe('e.g. "New Product Launch", "Holiday Promotion", "Win-Back"'),
+      tone:          z.enum(['aspirational', 'minimal', 'playful']).optional().describe('Copy tone (default: aspirational)'),
+    },
+  }, async ({ api_key, brand_name, product_name, campaign_type, tone = 'aspirational' }) => {
+    const client = new KlaviyoClient(api_key);
+    const copy = await generateCampaignCopy({ brandName: brand_name, productName: product_name, campaignType: campaign_type, tone, isFlow: false, includeSMSBranch: false });
+    const sink = { write: () => {} };
+    await createEmailCampaign(client, copy, { brandName: brand_name, campaignType: campaign_type }, sink);
+    return { content: [{ type: 'text', text: `Campaign "${copy.campaign_name ?? campaign_type} [seeder]" created in Klaviyo as a draft.` }] };
+  });
+
+  // ── generate_flow ───────────────────────────────────────
+  mcp.registerTool('generate_flow', {
+    description: 'Use Claude to write copy and create a multi-step email flow in Klaviyo with optional conditional split and SMS branch.',
+    inputSchema: {
+      api_key:                   z.string().describe('Klaviyo private API key (pk_...)'),
+      brand_name:                z.string().describe('Brand name'),
+      product_name:              z.string().describe('Product or offer'),
+      campaign_type:             z.string().describe('e.g. "Win-Back", "Post-Purchase"'),
+      tone:                      z.enum(['aspirational', 'minimal', 'playful']).optional(),
+      include_conditional_split: z.boolean().optional().describe('Add a conditional split on phone_number (default: true)'),
+      include_sms:               z.boolean().optional().describe('Yes branch sends SMS instead of email (default: false)'),
+    },
+  }, async ({ api_key, brand_name, product_name, campaign_type, tone = 'aspirational', include_conditional_split = true, include_sms = false }) => {
+    const client = new KlaviyoClient(api_key);
+    const includeSMSBranch = include_conditional_split && include_sms;
+    const copy = await generateCampaignCopy({ brandName: brand_name, productName: product_name, campaignType: campaign_type, tone, isFlow: true, includeSMSBranch });
+    const sink = { write: () => {} };
+    const flowId = await probeFlowSchemas(client, copy, { brandName: brand_name, includeSMSBranch, includeConditionalSplit: include_conditional_split }, sink);
+    return { content: [{ type: 'text', text: `Flow "${copy.flow_name} [seeder]" created in Klaviyo (ID: ${flowId}).` }] };
+  });
+
+  // ── sandbox_status ──────────────────────────────────────
+  mcp.registerTool('sandbox_status', {
+    description: 'Return a summary of what lists and seeded profiles currently exist in the Klaviyo account.',
+    inputSchema: {
+      api_key: z.string().describe('Klaviyo private API key (pk_...)'),
+    },
+  }, async ({ api_key }) => {
+    const client = new KlaviyoClient(api_key);
+    const summary = await client.getSandboxSummary();
+    return { content: [{ type: 'text', text: summary }] };
+  });
+
+  return mcp;
+}
+
+app.post('/mcp', async (req, res) => {
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const mcp = buildMcpServer();
+  try {
+    await mcp.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error('[mcp] error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/mcp', (_req, res) => {
+  res.status(405).json({ error: 'MCP requires POST. Configure Claude Desktop with: {"url": "http://localhost:3001/mcp"}' });
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`[server] API running at http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`[server] Web API:  http://localhost:${PORT}`);
+  console.log(`[server] MCP HTTP: http://localhost:${PORT}/mcp`);
+});
