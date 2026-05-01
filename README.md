@@ -63,7 +63,12 @@ Opens the app at [http://localhost:5173](http://localhost:5173). The Express ser
 
 ## Claude Desktop (MCP)
 
-The same Express server also exposes an MCP endpoint at `POST /mcp`. Once the server is running locally, Claude Desktop can use it directly — no separate process needed.
+The project includes two MCP integration paths:
+
+- **`mcp-server.js`** — stdio server for Claude Desktop (spawned as a child process, no web server needed)
+- **`POST /mcp`** on the Express server — HTTP/Streamable transport for remote/hosted deployments
+
+For Claude Desktop, use `mcp-server.js`.
 
 Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -71,14 +76,14 @@ Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "klaviyo-sandbox-seeder": {
-      "type": "http",
-      "url": "http://localhost:3001/mcp"
+      "command": "node",
+      "args": ["/absolute/path/to/klaviyo_sandbox_seed/mcp-server.js"]
     }
   }
 }
 ```
 
-Restart Claude Desktop, then ask it things like:
+`mcp-server.js` loads `.env` automatically, so `KLAVIYO_API_KEY` and `ANTHROPIC_API_KEY` are picked up without any extra config. Restart Claude Desktop, then ask it things like:
 - "Seed my Klaviyo account with 50 profiles using my key pk_..."
 - "Generate a win-back flow for Arc & Thread selling linen shirts"
 - "Reset all seeded profiles from my Klaviyo sandbox"
